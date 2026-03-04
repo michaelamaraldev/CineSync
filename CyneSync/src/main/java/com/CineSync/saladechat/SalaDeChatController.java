@@ -19,25 +19,25 @@ public class SalaDeChatController {
     private final SalaDeChatService salaDeChatService;
 
     @PostMapping("/rooms")
-    public ResponseEntity<ShareLinkResponse> createRoom(@RequestParam String ownerId) {
-        ShareLinkResponse response = salaDeChatService.createRoomWithShareLink(ownerId);
+    public ResponseEntity<LinkCompartilhavelResponse> createRoom(@RequestParam String ownerId) {
+        LinkCompartilhavelResponse response = salaDeChatService.createRoomWithShareLink(ownerId);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/rooms/share-link")
-    public ResponseEntity<ShareLinkResponse> generateShareLink(
-            @RequestBody GenerateLinkRequest request
+    public ResponseEntity<LinkCompartilhavelResponse> generateShareLink(
+            @RequestBody GerarLinkRequest request
     ) {
-        ShareLinkResponse response = salaDeChatService.generateShareLink(request);
+        LinkCompartilhavelResponse response = salaDeChatService.generateShareLink(request);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/join/{shareCode}")
-    public ResponseEntity<JoinRoomResponse> joinRoom(
+    public ResponseEntity<EntrarNaSalaResponse> joinRoom(
             @PathVariable String shareCode,
             @RequestParam String userId
     ) {
-        JoinRoomResponse response = salaDeChatService.joinRoomByShareCode(shareCode, userId);
+        EntrarNaSalaResponse response = salaDeChatService.joinRoomByShareCode(shareCode, userId);
         return ResponseEntity.ok(response);
     }
 
@@ -52,19 +52,19 @@ public class SalaDeChatController {
     }
 
     @PutMapping("/rooms/{chatId}/share-link")
-    public ResponseEntity<ShareLinkResponse> regenerateLink(
+    public ResponseEntity<LinkCompartilhavelResponse> regenerateLink(
             @PathVariable String chatId,
             @RequestParam String userId
     ) {
-        ShareLinkResponse response = salaDeChatService.regenerateShareLink(chatId, userId);
+        LinkCompartilhavelResponse response = salaDeChatService.regenerateShareLink(chatId, userId);
         return ResponseEntity.ok(response);
     }
 
     @MessageMapping("/room/{chatId}/send")
     @SendTo("/topic/room/{chatId}")
-    public WebSocketMessage sendMessage(
+    public WebSocketMensagem sendMessage(
             @DestinationVariable String chatId,
-            @Payload WebSocketMessage message
+            @Payload WebSocketMensagem message
     ) {
         message.setChatId(chatId);
         message.setTimestamp(java.time.LocalDateTime.now());
@@ -73,11 +73,11 @@ public class SalaDeChatController {
 
     @MessageMapping("/room/{chatId}/join")
     @SendTo("/topic/room/{chatId}")
-    public WebSocketMessage userJoined(
+    public WebSocketMensagem userJoined(
             @DestinationVariable String chatId,
-            @Payload WebSocketMessage message
+            @Payload WebSocketMensagem message
     ) {
-        message.setType(WebSocketMessage.MessageType.JOIN);
+        message.setType(WebSocketMensagem.MessageType.JOIN);
         message.setChatId(chatId);
         message.setContent(message.getSenderName() + " entrou na sala");
         message.setTimestamp(java.time.LocalDateTime.now());

@@ -1,7 +1,7 @@
 package com.CineSync.saladechat;
 
 import com.CineSync.saladechat.dto.*;
-import com.CineSync.saladechat.exception.RoomException;
+import com.CineSync.saladechat.exception.SalaException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -76,13 +76,13 @@ public class SalaDeChatService {
         return chatId;
     }
 
-    public ShareLinkResponse generateShareLink(GenerateLinkRequest request) {
+    public LinkCompartilhavelResponse generateShareLink(GerarLinkRequest request) {
         SalaDeChat sala = salaDeChatRepository.findByChatId(request.getChatId())
-                .orElseThrow(() -> new RoomException("Sala não encontrada: " + request.getChatId()));
+                .orElseThrow(() -> new SalaException("Sala não encontrada: " + request.getChatId()));
 
         // Verifica se o solicitante é o dono
         if (!sala.getOwnerId().equals(request.getUserId())) {
-            throw new RoomException("Apenas o dono da sala pode gerar links compartilháveis");
+            throw new SalaException("Apenas o dono da sala pode gerar links compartilháveis");
         }
 
         String shareCode = sala.getShareCode();
@@ -104,7 +104,7 @@ public class SalaDeChatService {
 
         log.info("Link gerado para sala {}: {}", sala.getChatId(), fullLink);
 
-        return ShareLinkResponse.builder()
+        return LinkCompartilhavelResponse.builder()
                 .shareCode(shareCode)
                 .fullLink(fullLink)
                 .chatId(sala.getChatId())
@@ -114,7 +114,7 @@ public class SalaDeChatService {
                 .build();
     }
 
-    public ShareLinkResponse createRoomWithShareLink(String ownerId) {
+    public LinkCompartilhavelResponse createRoomWithShareLink(String ownerId) {
         String shareCode = generateUniqueCode();
         String chatId = "room_" + shareCode;
 
@@ -136,7 +136,7 @@ public class SalaDeChatService {
 
         log.info("Sala criada com link: {} por usuário: {}", fullLink, ownerId);
 
-        return ShareLinkResponse.builder()
+        return LinkCompartilhavelResponse.builder()
                 .shareCode(shareCode)
                 .fullLink(fullLink)
                 .chatId(chatId)
@@ -145,9 +145,9 @@ public class SalaDeChatService {
                 .build();
     }
 
-    public JoinRoomResponse joinRoomByShareCode(String shareCode, String userId) {
+    public EntrarNaSalaResponse joinRoomByShareCode(String shareCode, String userId) {
         SalaDeChat sala = salaDeChatRepository.findByShareCode(shareCode)
-                .orElseThrow(() -> new RoomException("Link inválido ou sala não encontrada"));
+                .orElseThrow(() -> new SalaException("Link inválido ou sala não encontrada"));
 
 
         validateRoom(sala, userId);
@@ -163,7 +163,7 @@ public class SalaDeChatService {
 
         log.info("Usuário {} entrou na sala {} via link {}", userId, sala.getChatId(), shareCode);
 
-        return JoinRoomResponse.builder()
+        return EntrarNaSalaResponse.builder()
                 .chatId(sala.getChatId())
                 .shareCode(shareCode)
                 .userId(userId)
@@ -175,10 +175,10 @@ public class SalaDeChatService {
 
     public void revokeShareLink(String chatId, String userId) {
         SalaDeChat sala = salaDeChatRepository.findByChatId(chatId)
-                .orElseThrow(() -> new RoomException("Sala não encontrada"));
+                .orElseThrow(() -> new SalaException("Sala não encontrada"));
 
         if (!sala.getOwnerId().equals(userId)) {
-            throw new RoomException("Apenas o dono da sala pode revogar o link");
+            throw new SalaException("Apenas o dono da sala pode revogar o link");
         }
 
         sala.setShareCode(null);
@@ -190,12 +190,12 @@ public class SalaDeChatService {
         log.info("Link revogado para sala {} pelo usuário {}", chatId, userId);
     }
 
-    public ShareLinkResponse regenerateShareLink(String chatId, String userId) {
+    public LinkCompartilhavelResponse regenerateShareLink(String chatId, String userId) {
         SalaDeChat sala = salaDeChatRepository.findByChatId(chatId)
-                .orElseThrow(() -> new RoomException("Sala não encontrada"));
+                .orElseThrow(() -> new SalaException("Sala não encontrada"));
 
         if (!sala.getOwnerId().equals(userId)) {
-            throw new RoomException("Apenas o dono da sala pode regenerar o link");
+            throw new SalaException("Apenas o dono da sala pode regenerar o link");
         }
 
         String newCode = generateUniqueCode();
@@ -207,7 +207,7 @@ public class SalaDeChatService {
 
         log.info("Link regenerado para sala {}: {}", chatId, fullLink);
 
-        return ShareLinkResponse.builder()
+        return LinkCompartilhavelResponse.builder()
                 .shareCode(newCode)
                 .fullLink(fullLink)
                 .chatId(chatId)
@@ -218,19 +218,19 @@ public class SalaDeChatService {
 
     private void validateRoom(SalaDeChat sala, String userId) {
         if (!sala.isActive()) {
-            throw new RoomException("Esta sala não está mais aceitando novos participantes");
+            throw new SalaException("Esta sala não está mais aceitando novos participantes");
         }
 
         if (sala.getExpiresAt() != null && LocalDateTime.now().isAfter(sala.getExpiresAt())) {
             sala.setActive(false);
             salaDeChatRepository.save(sala);
-            throw new RoomException("Este link expirou");
+            throw new SalaException("Este link expirou");
         }
 
         if (sala.getMaxParticipants() > 0
                 && sala.getParticipants().size() >= sala.getMaxParticipants()
                 && !sala.getParticipants().contains(userId)) {
-            throw new RoomException(
+            throw new SalaException(
                     String.format("Sala lotada (%d/%d participantes)",
                             sala.getParticipants().size(),
                             sala.getMaxParticipants())
@@ -245,7 +245,7 @@ public class SalaDeChatService {
             code = generateRandomCode();
             attempts++;
             if (attempts > 100) {
-                throw new RoomException("Não foi possível gerar um código único");
+                throw new SalaException("Não foi possível gerar um código único");
             }
         } while (salaDeChatRepository.existsByShareCode(code));
 
@@ -261,8 +261,8 @@ public class SalaDeChatService {
     }
 
     private void notifyParticipants(String chatId, String userId, String message) {
-        WebSocketMessage wsMessage = WebSocketMessage.builder()
-                .type(WebSocketMessage.MessageType.SYSTEM)
+        WebSocketMensagem wsMessage = WebSocketMensagem.builder()
+                .type(WebSocketMensagem.MessageType.SYSTEM)
                 .chatId(chatId)
                 .senderId(userId)
                 .content(message)
