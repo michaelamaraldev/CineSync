@@ -1,1 +1,12 @@
-spring.application.name=CyneSync
+spring:
+  data:
+    mongodb:
+      username: mich
+      password: mich
+      host: localhost
+      port: 27017
+      database: chat_app
+      authentication-database: admin
+
+server:
+  port: 8088
