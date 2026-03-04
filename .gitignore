@@ -1,0 +1,21 @@
+### Environment Variables ###
+.env
+
+### Docker ###
+.docker/
+docker-compose.override.yml
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### IDE ###
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace

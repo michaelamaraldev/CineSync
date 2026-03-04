@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CineSync - Chat Compartilhável</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { color: #58a6ff; margin-bottom: 20px; }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card h2 {
+            color: #58a6ff;
+            font-size: 1rem;
+            margin-bottom: 12px;
+        }
+
+        input, button {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            background: #0d1117;
+            color: #c9d1d9;
+            font-size: 0.95rem;
+        }
+
+        button {
+            background: #238636;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2ea043; }
+        button:disabled { background: #21262d; cursor: not-allowed; }
+
+        .btn-danger { background: #da3633; }
+        .btn-danger:hover { background: #f85149; }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .row input { flex: 1; min-width: 150px; }
+
+        #shareLink {
+            background: #0d1117;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px dashed #58a6ff;
+            word-break: break-all;
+            font-family: monospace;
+            display: none;
+        }
+
+        #chatBox {
+            height: 300px;
+            overflow-y: auto;
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .msg {
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+        .msg.sent {
+            background: #238636;
+            align-self: flex-end;
+        }
+        .msg.received {
+            background: #30363d;
+            align-self: flex-start;
+        }
+        .msg.system {
+            background: transparent;
+            color: #8b949e;
+            font-style: italic;
+            align-self: center;
+            font-size: 0.85rem;
+        }
+
+        .msg .meta {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.5);
+            margin-top: 4px;
+        }
+
+        #status {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .connected { background: #238636; color: white; }
+        .disconnected { background: #da3633; color: white; }
+
+        #participants {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .participant-badge {
+            background: #30363d;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎬 CineSync Chat</h1>
+
+    <div class="container">
+        <div class="card">
+            <h2>👤 Seu Usuário</h2>
+            <div class="row">
+                <input type="text" id="userId" placeholder="Seu ID de usuário">
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🆕 Criar Nova Sala</h2>
+            <div class="row">
+                <button onclick="createRoom()">Criar Sala</button>
+            </div>
+            <div id="shareLink">
+                <strong>🔗 Link para compartilhar:</strong><br>
+                <span id="linkText"></span>
+                <br><br>
+                <button onclick="copyLink()" style="font-size:0.85rem">📋 Copiar Link</button>
+                <button onclick="revokeLink()" class="btn-danger" style="font-size:0.85rem">
+                    🚫 Revogar Link
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔗 Entrar via Link</h2>
+            <div class="row">
+                <input type="text" id="shareCode" placeholder="Código (ex: A3K9XY2B)">
+                <button onclick="joinRoom()">Entrar</button>
+            </div>
+        </div>
+
+        <div id="status" class="disconnected">Desconectado</div>
+
+        <div class="card" id="participantsCard" style="display:none">
+            <h2>👥 Participantes</h2>
+            <div id="participants"></div>
+        </div>
+
+        <div class="card" id="chatCard" style="display:none">
+            <h2>💬 Mensagens</h2>
+            <div id="chatBox"></div>
+            <div class="row" style="margin-top: 12px">
+                <input type="text" id="messageInput" placeholder="Digite sua mensagem..."
+                       onkeypress="if(event.key==='Enter') sendMessage()">
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let stompClient = null;
+    let currentChatId = null;
+    let currentShareCode = null;
+
+    const API_BASE = '/api/chat';
+
+    async function createRoom() {
+        const userId = document.getElementById('userId').value.trim();
+        if (!userId) return alert('Informe seu ID de usuário');
+
+        try {
+            const res = await fetch(`${API_BASE}/rooms?ownerId=${userId}`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Erro ao criar sala');
+
+            currentChatId = data.chatId;
+            currentShareCode = data.shareCode;
+
+            document.getElementById('linkText').textContent = data.fullLink;
+            document.getElementById('shareLink').style.display = 'block';
+
+            connectWebSocket(data.chatId, userId);
+            updateParticipants([userId]);
+
+            console.log('Sala criada:', data);
+        } catch (err) {
+            alert('Erro: ' + err.message);
+        }
+    }
+
+    async function joinRoom() {
+        const userId = document.getElementById('userId').value.trim();
+        const shareCode = document.getElementById('shareCode').value.trim();
+
+        if (!userId) return alert('Informe seu ID de usuário');
+        if (!shareCode) return alert('Informe o código do link');
+
+        try {
+            const res = await fetch(
+                `${API_BASE}/join/${shareCode}?userId=${userId}`,
+                { method: 'POST' }
+            );
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Erro ao entrar na sala');
+
+            currentChatId = data.chatId;
+            currentShareCode = data.shareCode;
+
+            connectWebSocket(data.chatId, userId);
+            updateParticipants(data.participants);
+
+            console.log('Entrou na sala:', data);
+        } catch (err) {
+            alert('Erro: ' + err.message);
+        }
+    }
+
+    function connectWebSocket(chatId, userId) {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.debug = null;
+
+        stompClient.connect({}, () => {
+            setStatus(true);
+
+            stompClient.subscribe(`/topic/room/${chatId}`, (msg) => {
+                const message = JSON.parse(msg.body);
+                displayMessage(message, userId);
+            });
+
+            stompClient.send(`/app/room/${chatId}/join`, {}, JSON.stringify({
+                type: 'JOIN',
+                chatId: chatId,
+                senderId: userId,
+                senderName: userId
+            }));
+
+            document.getElementById('chatCard').style.display = 'block';
+            document.getElementById('participantsCard').style.display = 'block';
+
+        }, (error) => {
+            console.error('Erro WebSocket:', error);
+            setStatus(false);
+        });
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+        const userId = document.getElementById('userId').value.trim();
+
+        if (!content || !stompClient || !currentChatId) return;
+
+        stompClient.send(`/app/room/${currentChatId}/send`, {}, JSON.stringify({
+            type: 'CHAT',
+            chatId: currentChatId,
+            senderId: userId,
+            senderName: userId,
+            content: content
+        }));
+
+        input.value = '';
+        input.focus();
+    }
+
+    function displayMessage(message, currentUserId) {
+        const chatBox = document.getElementById('chatBox');
+        const div = document.createElement('div');
+
+        if (message.type === 'SYSTEM' || message.type === 'JOIN' || message.type === 'LEAVE') {
+            div.className = 'msg system';
+            div.textContent = `📢 ${message.content}`;
+        } else {
+            const isMine = message.senderId === currentUserId;
+            div.className = `msg ${isMine ? 'sent' : 'received'}`;
+            div.innerHTML = `
+                <strong>${message.senderName}</strong><br>
+                ${message.content}
+                <div class="meta">${new Date(message.timestamp).toLocaleTimeString()}</div>
+            `;
+        }
+
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function copyLink() {
+        const link = document.getElementById('linkText').textContent;
+        navigator.clipboard.writeText(link).then(() => {
+            alert('Link copiado!');
+        });
+    }
+
+    async function revokeLink() {
+        const userId = document.getElementById('userId').value.trim();
+        if (!currentChatId || !userId) return;
+
+        try {
+            const res = await fetch(
+                `${API_BASE}/rooms/${currentChatId}/share-link?userId=${userId}`,
+                { method: 'DELETE' }
+            );
+            if (res.ok) {
+                document.getElementById('shareLink').style.display = 'none';
+                alert('Link revogado com sucesso');
+            }
+        } catch (err) {
+            alert('Erro ao revogar: ' + err.message);
+        }
+    }
+
+    function setStatus(connected) {
+        const el = document.getElementById('status');
+        el.textContent = connected ? '🟢 Conectado' : '🔴 Desconectado';
+        el.className = connected ? 'connected' : 'disconnected';
+    }
+
+    function updateParticipants(list) {
+        const el = document.getElementById('participants');
+        el.innerHTML = list.map(p =>
+            `<span class="participant-badge">👤 ${p}</span>`
+        ).join('');
+        document.getElementById('participantsCard').style.display = 'block';
+    }
+
+    window.addEventListener('load', () => {
+        const path = window.location.pathname;
+        const match = path.match(/\/chat\/join\/([A-Z0-9]+)/i);
+        if (match) {
+            document.getElementById('shareCode').value = match[1];
+        }
+    });
+</script>
+</body>
+</html>
